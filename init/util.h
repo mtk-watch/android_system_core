@@ -66,6 +66,21 @@ bool IsLegalPropertyName(const std::string& name);
 void SetStdioToDevNull(char** argv);
 void InitKernelLogging(char** argv);
 bool IsRecoveryMode();
+
+#ifdef MTK_LOG
+int PropSetLogReap(int);
+void PropSetLogReset();
+
+void InitKernelLogging_split(char** argv);
+
+int selinux_klog_split_callback(int level, const char* fmt, ...);
+int SelinuxSetupKernelLogging_split_check();
+#endif
+
+#ifdef MTK_TRACE
+void StartWriteTrace(const char* tracemsg, int pid);
+void EndWriteTrace(int pid);
+#endif
 }  // namespace init
 }  // namespace android
 

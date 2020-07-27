@@ -170,7 +170,11 @@ int FirstStageMain(int argc, char** argv) {
     SetStdioToDevNull(argv);
     // Now that tmpfs is mounted on /dev and we have /dev/kmsg, we can actually
     // talk to the outside world...
+#ifdef MTK_LOG
+    InitKernelLogging_split(argv);
+#else
     InitKernelLogging(argv);
+#endif
 
     if (!errors.empty()) {
         for (const auto& [error_string, error_errno] : errors) {

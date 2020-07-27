@@ -17,10 +17,12 @@
 cc_binary {
     name: "storageproxyd",
     vendor: true,
+    init_rc: ["storageproxyd.rc"],
 
     srcs: [
         "ipc.c",
         "rpmb.c",
+        "rpmb_ufs.c",
         "storage.c",
         "proxy.c",
     ],

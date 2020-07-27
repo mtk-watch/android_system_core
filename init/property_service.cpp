@@ -143,6 +143,42 @@ static bool CheckMacPerms(const std::string& name, const char* target_context,
     return has_access;
 }
 
+#ifdef MTK_LOG
+static int PropSetFilter(const std::string& name)
+{
+#if 0
+    if ((android::base::StartsWith(name, "ro.") &&
+         !android::base::StartsWith(name, "ro.boottime.")) ||
+#else
+    if (android::base::StartsWith(name, "ro.") ||
+#endif
+        android::base::StartsWith(name, "vold.encrypt_") ||
+        android::base::StartsWith(name, "persist.log.tag") ||
+        android::base::StartsWith(name, "vendor.debug.mtk.aee") ||
+        android::base::StartsWith(name, "init.svc.")) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static void PropSetLog(const std::string& name, const std::string& value, std::string* error)
+{
+    if (PropSetFilter(name))
+        return;
+
+    std::string new_value(value.c_str());
+    std::size_t found = new_value.find_first_of("\n");
+    while (found!=std::string::npos)
+    {
+        new_value[found]=' ';
+        found = new_value.find_first_of("\n", found + 1);
+    }
+
+    LOG(INFO) << "PropSet [" << name << "]=[" << new_value << "]";
+}
+#endif
+
 static uint32_t PropertySet(const std::string& name, const std::string& value, std::string* error) {
     size_t valuelen = value.size();
 
@@ -184,6 +220,12 @@ static uint32_t PropertySet(const std::string& name, const std::string& value, s
         WritePersistentProperty(name, value);
     }
     property_changed(name, value);
+
+#ifdef MTK_LOG
+    // MTK add log
+    PropSetLog(name, value, error);
+#endif
+
     return PROP_SUCCESS;
 }
 
@@ -742,6 +784,48 @@ static void load_override_properties() {
     }
 }
 
+#ifdef MTK_RSC
+static void LoadRscRoProps() {
+    const std::string rscname_org = android::base::GetProperty("ro.boot.rsc", "");
+    const std::string rscname_ago = android::base::GetProperty("ro.boot.rsc.ago", "");
+    const std::string rscname = rscname_org == "" ? rscname_ago : rscname_org;
+    const std::string rscpath = rscname == "" ? "" : "etc/rsc/"+rscname+"/";
+    std::map<std::string, std::string> properties;
+    load_properties_from_file(
+        std::string("/system/" + rscpath + "ro.prop").c_str(), nullptr, &properties);
+    load_properties_from_file(
+        std::string("/vendor/" + rscpath + "ro.prop").c_str(), nullptr, &properties);
+
+    for (const auto& [name, value] : properties) {
+        std::string error;
+        if (PropertySet(name, value, &error) != PROP_SUCCESS) {
+            LOG(ERROR) << "Could not set '" << name << "' to '" << value
+                       << "' while loading RSC ro.prop files" << error;
+        }
+    }
+}
+
+static void LoadRscRwProps() {
+    const std::string rscname_org = android::base::GetProperty("ro.boot.rsc", "");
+    const std::string rscname_ago = android::base::GetProperty("ro.boot.rsc.ago", "");
+    const std::string rscname = rscname_org == "" ? rscname_ago : rscname_org;
+    const std::string rscpath = rscname == "" ? "" : "etc/rsc/"+rscname+"/";
+    std::map<std::string, std::string> properties;
+    load_properties_from_file(
+        std::string("/system/" + rscpath + "rw.prop").c_str(), nullptr, &properties);
+    load_properties_from_file(
+        std::string("/vendor/" + rscpath + "rw.prop").c_str(), nullptr, &properties);
+
+    for (const auto& [name, value] : properties) {
+        std::string error;
+        if (PropertySet(name, value, &error) != PROP_SUCCESS) {
+            LOG(ERROR) << "Could not set '" << name << "' to '" << value
+                       << "' while loading RSC rw.prop files" << error;
+        }
+    }
+}
+#endif
+
 /* When booting an encrypted system, /data is not mounted when the
  * property service is started, so any properties stored there are
  * not loaded.  Vold triggers init to load these properties once it
@@ -760,6 +844,9 @@ void load_persist_props(void) {
     }
 
     load_override_properties();
+#ifdef MTK_RSC
+    LoadRscRwProps();
+#endif
     /* Read persistent properties after all default values have been loaded. */
     auto persistent_properties = LoadPersistentProperties();
     for (const auto& persistent_property_record : persistent_properties.properties()) {
@@ -878,6 +965,9 @@ void property_load_boot_defaults(bool load_debug_prop) {
     // We read the properties and their values into a map, in order to always allow properties
     // loaded in the later property files to override the properties in loaded in the earlier
     // property files, regardless of if they are "ro." properties or not.
+#ifdef MTK_RSC
+    LoadRscRoProps();
+#endif
     std::map<std::string, std::string> properties;
     if (!load_properties_from_file("/system/etc/prop.default", nullptr, &properties)) {
         // Try recovery path
